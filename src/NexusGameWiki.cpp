@@ -52,6 +52,7 @@ constexpr int kImageWorkerCount = 4;
 constexpr int kMaxImageTextureLoadRequestsPerFrame = 4;
 constexpr size_t kMaxRecentEntries = 60;
 
+// The quick-access icon is embedded so public builds can ship as a single DLL.
 constexpr unsigned char kEmbeddedIconPng[] = {
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
     0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x20,
@@ -375,6 +376,8 @@ struct WorkerState
     std::vector<std::thread> ImageThreads;
 };
 
+// AppState owns the live UI/session state. Anything that should survive restarts is
+// persisted separately under the addon folder and reloaded into this structure on startup.
 struct AppState
 {
     AddonAPI* Api = nullptr;
@@ -642,6 +645,8 @@ std::string JoinTokens(const std::vector<std::string>& tokens, size_t startIndex
 std::string NormalizeSearchInput(std::string value)
 {
     value = TrimCopy(value);
+    // Pasted GW2-style text often arrives as "[ 25 Item Name ]". Strip wrapping
+    // brackets and leading quantity noise so search sees the actual subject.
     while (value.size() >= 2 && value.front() == '[' && value.back() == ']')
     {
         value = TrimCopy(value.substr(1, value.size() - 2));
@@ -2559,6 +2564,8 @@ void SaveLibrary()
         return;
     }
 
+    // Recent/favorites stay deliberately small and human-readable so a broken entry can
+    // be recovered without introducing a heavier persistence layer.
     json payload;
     payload["recent"] = json::array();
     payload["favorites"] = json::array();
@@ -2669,6 +2676,7 @@ void PreparePaths()
     gState.AddonDirectory = addonDir != nullptr ? addonDir : "";
     EnsureDirectory(gState.AddonDirectory);
 
+    // The addon bootstraps its own support/cache tree so end users only need the DLL.
     gState.SettingsPath = JoinPath(gState.AddonDirectory, "settings.ini");
     gState.LibraryPath = JoinPath(gState.AddonDirectory, "library.json");
     gState.CacheRoot = JoinPath(gState.AddonDirectory, "cache");
@@ -3388,6 +3396,8 @@ void SearchWorkerLoop()
         result.QueryNormalized = job.QueryNormalized;
         result.ForceRefresh = job.ForceRefresh;
 
+        // Search is disk-first: cached results can be shown immediately while the main
+        // thread decides whether a stale hit should be refreshed in the background.
         CacheMetadata searchCacheMetadata;
         if (!job.ForceRefresh && LoadSearchCache(job.QueryNormalized, result.Results, &searchCacheMetadata))
         {
@@ -3452,6 +3462,8 @@ void SearchWorkerLoop()
                 const std::string leftTitle = Normalize(left.Title);
                 const std::string rightTitle = Normalize(right.Title);
 
+                // Keep ranking explainable: exact match first, then prefix/contains, then
+                // softer fuzzy tie-breakers so typo tolerance does not bury obvious results.
                 const auto score = [&](const std::string& normalizedTitle) {
                     const std::vector<std::string> titleWords = SplitWords(normalizedTitle);
                     const bool allWordsPrefixMatch = !queryWords.empty() &&
@@ -4293,6 +4305,8 @@ void EnsureIconShortcut()
         return;
     }
 
+    // Register the embedded icon up front so Nexus never depends on a loose PNG beside
+    // the DLL. The same texture id is reused for hover to keep the shortcut simple.
     gState.Api->Textures.GetOrCreateFromMemory(
         kIconTextureId,
         const_cast<unsigned char*>(kEmbeddedIconPng),
@@ -5475,6 +5489,8 @@ void RenderContentsSidebar(ArticleTab* tab)
         ImGui::PushID(static_cast<int>(index));
         if (RenderContentsEntryRow(section, selected))
         {
+            // The sidebar only retargets the active article tab and expands the ancestor
+            // section path required to make the destination visible.
             tab->PendingScrollSectionIndex = section.Index;
             tab->SelectedSectionIndex = section.Index;
             ExpandSectionPathForNavigation(*tab, tab->Document.Parsed, section.Index);
@@ -5506,6 +5522,8 @@ size_t RenderSectionBlocks(const ParsedPage& parsed, const std::vector<HtmlBlock
     }
 
     const float headerAnchorY = RenderSectionHeaderRow(title, heading.Level, collapsed, key + ":header");
+    // Contents clicks queue a section id. When that exact header renders, resolve the
+    // jump there and clear the request so repeated clicks stay idempotent.
     if (!tab.PendingScrollSectionIndex.empty() && sectionIndex == tab.PendingScrollSectionIndex)
     {
         ImGui::SetScrollY(headerAnchorY);
