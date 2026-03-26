@@ -1,0 +1,6 @@
+dist/
+release/
+*.log
+*.tmp
+codex-icon-preview.png
+black-lion-statuette-parse.json
