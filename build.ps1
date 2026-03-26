@@ -7,13 +7,31 @@ $ErrorActionPreference = "Stop"
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $distRoot = Join-Path $scriptRoot "dist"
-$packageDir = Join-Path $distRoot "NexusGameWiki"
-$iconPath = Join-Path $packageDir "nexusgamewiki-icon.png"
 $dllPath = Join-Path $distRoot "NexusGameWiki.dll"
-$cacheSearchDir = Join-Path $packageDir "cache\search"
-$cachePageDir = Join-Path $packageDir "cache\pages"
+$legacyPackageDir = Join-Path $distRoot "NexusGameWiki"
+$releaseRoot = Join-Path $scriptRoot "release"
 
-New-Item -ItemType Directory -Force $distRoot, $packageDir, $cacheSearchDir, $cachePageDir | Out-Null
+New-Item -ItemType Directory -Force $distRoot | Out-Null
+if (Test-Path $legacyPackageDir) {
+  Remove-Item -Path $legacyPackageDir -Recurse -Force
+}
+
+function Get-AddonVersion {
+  param([Parameter(Mandatory = $true)][string]$SourcePath)
+
+  $source = Get-Content -Path $SourcePath -Raw
+
+  $major = [regex]::Match($source, 'addonDef\.Version\.Major\s*=\s*(\d+);').Groups[1].Value
+  $minor = [regex]::Match($source, 'addonDef\.Version\.Minor\s*=\s*(\d+);').Groups[1].Value
+  $build = [regex]::Match($source, 'addonDef\.Version\.Build\s*=\s*(\d+);').Groups[1].Value
+  $revision = [regex]::Match($source, 'addonDef\.Version\.Revision\s*=\s*(\d+);').Groups[1].Value
+
+  if (-not $major -or -not $minor -or -not $build -or -not $revision) {
+    throw "Failed to parse addon version from $SourcePath"
+  }
+
+  return "$major.$minor.$build.$revision"
+}
 
 function Get-ZigPath {
   $zig = Get-ChildItem "C:\Users\PCD\AppData\Local\Microsoft\WinGet\Packages" -Recurse -Filter zig.exe -ErrorAction SilentlyContinue |
@@ -26,17 +44,11 @@ function Get-ZigPath {
   return $zig
 }
 
-function Write-NexusGameWikiIcon {
-  param([Parameter(Mandatory = $true)][string]$OutputPath)
-
-  $iconBase64 = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAGuSURBVFhH7ZUtTwNBEIYrUQSJIUGS1CAJqj8BgcCQYEBDSEhQQK9YoGRnt6kpKbS7twupRCAQKAz8AASGgEQ2BAGZwt4tc5/lQ3FPsmkz884772XFlkoFBQU5UIrPKM0XfAPbUrMlaUTlO5qhaLVaI0rzVWX4k2/4Gz1K82fl85rSsJmmwUC93v4Y9c9EGX4eMYwsEtGlEQ0euMcPojsSkVJMOoa3SsHcl74RFaXYjdVIwx/iNL7ml6FmiCtxA8QNAnizJ5ItWk1H15tYo7osn0ToYP14a5Q3dteZ8M5AeI/4e9Q+WLOadmev6/ZQizPUh+5JhA6yZrWMpu5XdrtiPtBoYLaOmkHYZrVMfYIFWaQNojF+HQ2ANey52jSfVOjgxxXUdqDhXYOoXeAiGgBr2EMNan/9CpjwlgG8CauhAWwdNaj9syuwJAVwyeMTS57B/xUg7qGhAeI01IfuScQd9A30w//hkQpenACvtE9nfxAgPPEPTT7NUAEGT/GnUfJjBFeBuQ93cZrwMYK+1mzc7WfSOT2cwnuldRep+YrSsEHrLlqzaTy0XlBQUGB5B5CD+PHf0u1IAAAAAElFTkSuQmCC"
-  [System.IO.File]::WriteAllBytes($OutputPath, [Convert]::FromBase64String($iconBase64))
-}
-
-Write-NexusGameWikiIcon -OutputPath $iconPath
-
 $zig = Get-ZigPath
 $includeRoot = Join-Path $scriptRoot "vendor"
+$sourcePath = Join-Path $scriptRoot "src\NexusGameWiki.cpp"
+$addonVersion = Get-AddonVersion -SourcePath $sourcePath
+$releaseZipPath = Join-Path $releaseRoot ("NexusGameWiki-v{0}.zip" -f $addonVersion)
 
 $args = @(
   "c++",
@@ -53,7 +65,7 @@ $args = @(
   "-I" + (Join-Path $includeRoot "mumble"),
   "-I" + (Join-Path $includeRoot "imgui"),
   "-I" + (Join-Path $includeRoot "nlohmann"),
-  (Join-Path $scriptRoot "src\NexusGameWiki.cpp"),
+  $sourcePath,
   (Join-Path $scriptRoot "vendor\imgui\imgui.cpp"),
   (Join-Path $scriptRoot "vendor\imgui\imgui_draw.cpp"),
   (Join-Path $scriptRoot "vendor\imgui\imgui_tables.cpp"),
@@ -76,18 +88,25 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ("Built {0}" -f $dllPath)
 
+New-Item -ItemType Directory -Force $releaseRoot | Out-Null
+if (Test-Path $releaseZipPath) {
+  Remove-Item -Path $releaseZipPath -Force
+}
+
+Compress-Archive -Path $dllPath -DestinationPath $releaseZipPath -CompressionLevel Optimal
+Write-Host ("Packaged {0}" -f $releaseZipPath)
+
 if (-not $SkipInstall) {
   $addonsRoot = Join-Path $GameRoot "addons"
-  if (-not (Test-Path $addonsRoot)) {
-    throw "Guild Wars 2 addons folder not found at $addonsRoot"
-  }
+  New-Item -ItemType Directory -Force $addonsRoot | Out-Null
 
   $targetDll = Join-Path $addonsRoot "NexusGameWiki.dll"
-  $targetDir = Join-Path $addonsRoot "NexusGameWiki"
+  $legacyIconPath = Join-Path $addonsRoot "NexusGameWiki\\nexusgamewiki-icon.png"
 
-  New-Item -ItemType Directory -Force $targetDir, (Join-Path $targetDir "cache\search"), (Join-Path $targetDir "cache\pages") | Out-Null
   Copy-Item -Path $dllPath -Destination $targetDll -Force
-  Copy-Item -Path (Join-Path $packageDir "*") -Destination $targetDir -Recurse -Force
+  if (Test-Path $legacyIconPath) {
+    Remove-Item -Path $legacyIconPath -Force
+  }
 
   Write-Host ("Installed NexusGameWiki to {0}" -f $addonsRoot)
 }

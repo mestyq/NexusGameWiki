@@ -14,8 +14,9 @@ Guild Wars 2 in-game wiki viewer for Nexus.
 
 1. Install [Nexus](https://raidcore.gg/gw2/nexus) for Guild Wars 2.
 2. Place `NexusGameWiki.dll` in your `Guild Wars 2\\addons\\` folder.
-3. Place the `NexusGameWiki\\` folder beside it in `Guild Wars 2\\addons\\`.
-4. Launch the game and open the addon from the Nexus quick-access bar or the configured hotkey.
+3. Launch the game and open the addon from the Nexus quick-access bar or the configured hotkey.
+
+The addon creates its own `NexusGameWiki\\` support and cache folders automatically inside `Guild Wars 2\\addons\\` the first time it runs.
 
 ## Build
 
@@ -26,6 +27,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
 The script builds the addon and, by default, installs it to the local Guild Wars 2 addons folder.
+It also creates a release zip in `release/` containing the single `NexusGameWiki.dll` file for distribution.
 
 ## Project layout
 
