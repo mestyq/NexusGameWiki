@@ -10,6 +10,10 @@ Guild Wars 2 in-game wiki viewer for Nexus.
 - disk-first cache for search results, page HTML, and downloaded wiki images
 - recent pages and favorites
 
+## AI Notice
+
+This addon was built with AI assistance using Codex. The goal is simply to make useful Guild Wars 2 tools for the community. If AI-assisted software is not for you, that is okay.
+
 ## Install
 
 1. Install [Nexus](https://raidcore.gg/gw2/nexus) for Guild Wars 2.
